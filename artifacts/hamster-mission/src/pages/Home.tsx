@@ -1,97 +1,125 @@
 import React, { useState } from 'react';
-import { MissionCard } from '@/components/MissionCard';
-import { Printer, RefreshCw } from 'lucide-react';
+import { Difficulty } from '../types';
+import { useMazeSimulator } from '../hooks/useMazeSimulator';
+import { MazeDisplay } from '../components/MazeDisplay';
+import { CommandEditor } from '../components/CommandEditor';
+import { ExecutionControls } from '../components/ExecutionControls';
+import { ResultOverlay } from '../components/ResultOverlay';
 
 export default function Home() {
-  const [activity, setActivity] = useState<'maze' | 'line'>('maze');
-  const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>('easy');
-  const [missionKey, setMissionKey] = useState(0);
+  const [difficulty, setDifficulty] = useState<Difficulty>('easy');
+  const [missionSeed, setMissionSeed] = useState(42);
 
-  const handlePrint = () => {
-    window.print();
+  const simulator = useMazeSimulator(difficulty, missionSeed);
+
+  function newMission() { 
+    setMissionSeed(Math.floor(Math.random() * 100000)); 
+  }
+
+  const handleDifficultyChange = (d: Difficulty) => {
+    if (simulator.status === 'running') return;
+    setDifficulty(d);
+  };
+
+  const getDifficultyGuide = () => {
+    switch (difficulty) {
+      case 'easy': return '🟢 명령 순서를 바꿔서 햄스터를 출발시켜 보세요!';
+      case 'medium': return '🟡 부족한 명령을 추가해서 미로를 완성하세요!';
+      case 'hard': return '🔴 모든 명령을 직접 만들어 보세요!';
+    }
   };
 
   return (
-    <div className="min-h-screen bg-amber-50/50 font-sans pb-20">
-      {/* Control Panel - hidden in print */}
-      <div className="no-print bg-white shadow-sm border-b border-amber-100 p-6 mb-8 flex flex-col items-center gap-8">
-        <h1 className="text-4xl md:text-5xl font-jua text-amber-600 drop-shadow-sm">
-          🐹 햄스터 로봇 미션 생성기
-        </h1>
-        
-        <div className="flex flex-wrap justify-center gap-8 lg:gap-16 w-full max-w-4xl">
-          {/* Activity Toggle */}
-          <div className="flex flex-col gap-3">
-            <span className="text-lg font-bold text-slate-500 text-center">활동 선택</span>
-            <div className="flex bg-slate-100 p-1 rounded-full shadow-inner">
+    <div className="min-h-[100dvh] bg-slate-900 font-sans flex flex-col">
+      {/* Top Header */}
+      <header className="flex-none bg-slate-800 shadow-md border-b border-slate-700 px-4 py-3 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
+          <h1 className="text-2xl md:text-3xl font-jua text-white flex items-center gap-2">
+            <span>🐹</span> 햄스터 로봇 미션
+          </h1>
+          
+          <div className="flex items-center gap-3">
+            <div className="flex bg-slate-900 p-1 rounded-full shadow-inner border border-slate-700">
               <button 
-                className={`min-h-[48px] px-8 rounded-full font-bold text-lg transition-all duration-300 ${activity === 'maze' ? 'bg-amber-500 text-white shadow-md' : 'text-slate-600 hover:bg-slate-200'}`} 
-                onClick={() => setActivity('maze')}
-              >
-                미로찾기
-              </button>
-              <button 
-                className={`min-h-[48px] px-8 rounded-full font-bold text-lg transition-all duration-300 ${activity === 'line' ? 'bg-amber-500 text-white shadow-md' : 'text-slate-600 hover:bg-slate-200'}`} 
-                onClick={() => setActivity('line')}
-              >
-                라인트레이싱
-              </button>
-            </div>
-          </div>
-
-          {/* Difficulty Toggle */}
-          <div className="flex flex-col gap-3">
-            <span className="text-lg font-bold text-slate-500 text-center">난이도 선택</span>
-            <div className="flex bg-slate-100 p-1 rounded-full shadow-inner">
-              <button 
-                className={`min-h-[48px] px-6 rounded-full font-bold text-lg transition-all duration-300 ${difficulty === 'easy' ? 'bg-green-500 text-white shadow-md' : 'text-slate-600 hover:bg-slate-200'}`} 
-                onClick={() => setDifficulty('easy')}
+                disabled={simulator.status === 'running'}
+                className={`min-h-[44px] px-4 md:px-6 rounded-full font-bold text-sm md:text-base transition-all duration-300 disabled:opacity-50 ${difficulty === 'easy' ? 'bg-green-500 text-white shadow-md' : 'text-slate-400 hover:text-white'}`} 
+                onClick={() => handleDifficultyChange('easy')}
               >
                 쉬움
               </button>
               <button 
-                className={`min-h-[48px] px-6 rounded-full font-bold text-lg transition-all duration-300 ${difficulty === 'medium' ? 'bg-yellow-500 text-white shadow-md' : 'text-slate-600 hover:bg-slate-200'}`} 
-                onClick={() => setDifficulty('medium')}
+                disabled={simulator.status === 'running'}
+                className={`min-h-[44px] px-4 md:px-6 rounded-full font-bold text-sm md:text-base transition-all duration-300 disabled:opacity-50 ${difficulty === 'medium' ? 'bg-yellow-500 text-white shadow-md' : 'text-slate-400 hover:text-white'}`} 
+                onClick={() => handleDifficultyChange('medium')}
               >
                 보통
               </button>
               <button 
-                className={`min-h-[48px] px-6 rounded-full font-bold text-lg transition-all duration-300 ${difficulty === 'hard' ? 'bg-red-500 text-white shadow-md' : 'text-slate-600 hover:bg-slate-200'}`} 
-                onClick={() => setDifficulty('hard')}
+                disabled={simulator.status === 'running'}
+                className={`min-h-[44px] px-4 md:px-6 rounded-full font-bold text-sm md:text-base transition-all duration-300 disabled:opacity-50 ${difficulty === 'hard' ? 'bg-red-500 text-white shadow-md' : 'text-slate-400 hover:text-white'}`} 
+                onClick={() => handleDifficultyChange('hard')}
               >
                 어려움
               </button>
             </div>
+            
+            <button 
+              onClick={newMission} 
+              disabled={simulator.status === 'running'}
+              className="min-h-[44px] px-4 md:px-6 bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 text-white rounded-full font-bold shadow-md transition-all active:scale-95"
+            >
+              새 미션
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content Area */}
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 lg:p-8 flex flex-col lg:flex-row gap-8 lg:gap-12 items-start">
+        
+        {/* Left Column: Maze */}
+        <div className="w-full lg:w-1/2 flex flex-col items-center">
+          <div className="mb-4 text-center">
+            <p className="text-xl font-jua text-indigo-300">
+              {getDifficultyGuide()}
+            </p>
+          </div>
+          
+          <div className="relative w-full flex justify-center">
+            <MazeDisplay 
+              maze={simulator.maze}
+              size={simulator.size}
+              hamster={simulator.hamster}
+              currentStep={simulator.currentStep}
+            />
+            <ResultOverlay status={simulator.status} />
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex flex-wrap justify-center gap-4 mt-2">
-          <button 
-            onClick={() => setMissionKey(k => k + 1)} 
-            className="min-h-[56px] px-8 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white rounded-full font-bold text-xl shadow-lg hover:shadow-xl transform transition hover:-translate-y-0.5 active:translate-y-0 flex items-center gap-3"
-          >
-            <RefreshCw className="w-6 h-6" />
-            새 미션 만들기
-          </button>
-          <button 
-            onClick={handlePrint} 
-            className="min-h-[56px] px-8 bg-slate-800 hover:bg-slate-900 active:bg-black text-white rounded-full font-bold text-xl shadow-lg hover:shadow-xl transform transition hover:-translate-y-0.5 active:translate-y-0 flex items-center gap-3"
-          >
-            <Printer className="w-6 h-6" />
-            인쇄
-          </button>
-        </div>
-      </div>
+        {/* Right Column: Controls & Editor */}
+        <div className="w-full lg:w-1/2 flex flex-col gap-6">
+          <ExecutionControls 
+            status={simulator.status}
+            commandCount={simulator.commands.length}
+            onStepForward={simulator.stepForward}
+            onRunAll={simulator.runAll}
+            onPause={simulator.pause}
+            onReset={simulator.resetPosition}
+          />
 
-      {/* Print Area Container */}
-      <div className="flex justify-center px-4">
-        <div className="bg-white shadow-2xl rounded-[2rem] w-full max-w-[210mm] overflow-hidden print:shadow-none print:rounded-none">
-          <div id="print-area">
-            <MissionCard activity={activity} difficulty={difficulty} missionKey={missionKey} />
-          </div>
+          <CommandEditor 
+            commands={simulator.commands}
+            currentStep={simulator.currentStep}
+            status={simulator.status}
+            difficulty={difficulty}
+            onAdd={simulator.addCommand}
+            onRemove={simulator.removeCommand}
+            onRemoveLast={simulator.removeLastCommand}
+            onClear={simulator.clearCommands}
+            onReorder={simulator.reorderCommands}
+          />
         </div>
-      </div>
+      </main>
     </div>
   );
 }
