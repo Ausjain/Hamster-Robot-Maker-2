@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "햄스터 로봇 미션 생성기"
+version = "1.0.0"
+id = "artifacts/hamster-mission"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 26131
+
+[services.development]
+run = "pnpm --filter @workspace/hamster-mission run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/hamster-mission", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/hamster-mission/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "26131"
+BASE_PATH = "/"
