@@ -127,9 +127,9 @@ export function useHamsterSimulator(difficulty: Difficulty, missionSeed: number)
 
   /* ── command mutations ── */
 
-  function addCommand(type: CommandType) {
+  function addCommand(type: CommandType, overrides?: Partial<Omit<Command, 'id' | 'type'>>) {
     if (status === 'running') return;
-    setCommands(prev => [...prev, makeCommand(type)]);
+    setCommands(prev => [...prev, makeCommand(type, overrides)]);
   }
 
   function removeCommand(id: string) {
