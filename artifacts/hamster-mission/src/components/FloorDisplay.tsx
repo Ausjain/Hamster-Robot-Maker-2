@@ -1,5 +1,6 @@
 import React from 'react';
-import { FloorMap, HamsterState } from '../types';
+import { HamsterState } from '../types';
+import type { FloorMap } from '../maps';
 
 interface FloorDisplayProps {
   map: FloorMap;

@@ -1,393 +1,687 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+
 import {
-  Command, CommandType, ExecutionStatus,
-  COMMAND_COLORS, COMMAND_ICONS, COMMAND_LABELS,
-  ANGLE_MIN, ANGLE_MAX, DURATION_MAX,
+  ANGLE_MAX,
+  ANGLE_MIN,
+  COMMAND_COLORS,
+  COMMAND_ICONS,
+  COMMAND_LABELS,
+  Command,
+  CommandType,
+  DURATION_MAX,
+  ExecutionStatus,
 } from '../types';
-
-/* ─── helpers ────────────────────────────────────────────── */
-
-const SPEED_SCALE = 200;
-function estimatedPx(speed: number, duration: number) {
-  return Math.round((speed / 100) * duration * SPEED_SCALE);
-}
-function clampSpeed(v: number)    { return Math.min(100, Math.max(0, Math.round(v))); }
-function clampDuration(v: number) { return Math.min(DURATION_MAX, Math.max(0.1, Math.round(v * 10) / 10)); }
-function clampAngle(v: number)    { return Math.min(ANGLE_MAX, Math.max(ANGLE_MIN, Math.round(v * 10) / 10)); }
-function fmtAngle(v: number)      { return Number.isInteger(v) ? String(v) : v.toFixed(1); }
-
-/* ─── props ──────────────────────────────────────────────── */
 
 interface CommandEditorProps {
   commands: Command[];
   currentStep: number;
   collisionStep: number;
   status: ExecutionStatus;
+
   onAdd: (type: CommandType) => void;
   onRemove: (id: string) => void;
   onRemoveLast: () => void;
   onClearOnly: () => void;
   onReorder: (from: number, to: number) => void;
-  onUpdate: (id: string, updates: Partial<Omit<Command, 'id' | 'type'>>) => void;
+
+  onUpdate: (
+    id: string,
+    updates: Partial<Omit<Command, 'id' | 'type'>>,
+  ) => void;
 }
 
-/* ─── Step button helper ─────────────────────────────────── */
+interface CommandPreset {
+  speed: number;
+  duration: number;
+  angle: number;
+}
 
-const stepBtnCls = 'flex-1 min-h-[38px] py-1 rounded-lg text-xs font-bold border transition-all active:scale-95 select-none';
-const stepBtnStyle: React.CSSProperties = { background: '#1e293b', color: '#94a3b8', borderColor: '#334155' };
+const COMMAND_TYPES: CommandType[] = [
+  'forward',
+  'backward',
+  'turnLeft',
+  'turnRight',
+];
 
-/* ─── Individual Command Card ────────────────────────────── */
+const DEFAULT_PRESETS: Record<CommandType, CommandPreset> = {
+  forward: {
+    speed: 50,
+    duration: 1.5,
+    angle: 90,
+  },
+  backward: {
+    speed: 50,
+    duration: 1.5,
+    angle: 90,
+  },
+  turnLeft: {
+    speed: 50,
+    duration: 1,
+    angle: 90,
+  },
+  turnRight: {
+    speed: 50,
+    duration: 1,
+    angle: 90,
+  },
+};
 
-interface CardProps {
-  cmd: Command;
+const STEP_BUTTON_CLASS =
+  'min-h-[30px] rounded-lg border border-slate-600 bg-slate-800 px-2 ' +
+  'text-xs font-bold text-slate-300 transition hover:bg-slate-700 ' +
+  'active:scale-95 disabled:cursor-not-allowed disabled:opacity-40';
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function roundOne(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+function formatNumber(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function isMoveCommand(type: CommandType): boolean {
+  return type === 'forward' || type === 'backward';
+}
+
+function CommandControlCard({
+  type,
+  preset,
+  disabled,
+  onChange,
+  onAdd,
+}: {
+  type: CommandType;
+  preset: CommandPreset;
+  disabled: boolean;
+  onChange: (next: CommandPreset) => void;
+  onAdd: () => void;
+}) {
+  const color = COMMAND_COLORS[type];
+  const isMove = isMoveCommand(type);
+
+  function updateSpeed(value: number) {
+    onChange({
+      ...preset,
+      speed: clamp(Math.round(value), 0, 100),
+    });
+  }
+
+  function updateDuration(value: number) {
+    onChange({
+      ...preset,
+      duration: roundOne(clamp(value, 0.1, DURATION_MAX)),
+    });
+  }
+
+  function updateAngle(value: number) {
+    onChange({
+      ...preset,
+      angle: roundOne(clamp(value, ANGLE_MIN, ANGLE_MAX)),
+    });
+  }
+
+  return (
+    <article
+      className="overflow-hidden rounded-2xl border-2 bg-slate-900/80"
+      style={{ borderColor: color.border }}
+    >
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={onAdd}
+        className="flex min-h-[48px] w-full items-center justify-between gap-2 px-4 py-2
+                   text-left font-jua text-base text-white transition
+                   hover:brightness-110 active:scale-[0.99]
+                   disabled:cursor-not-allowed disabled:opacity-50"
+        style={{ background: color.bg }}
+        title={`${COMMAND_LABELS[type]} 명령 추가`}
+      >
+        <span className="flex items-center gap-2">
+          <span className="text-xl">{COMMAND_ICONS[type]}</span>
+          <span>{COMMAND_LABELS[type]}</span>
+        </span>
+
+        <span className="rounded-lg bg-black/20 px-2 py-1 text-xs font-bold">
+          + 추가
+        </span>
+      </button>
+
+      <div className="space-y-4 p-3">
+        {isMove ? (
+          <>
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-sm font-bold text-slate-300">속도</span>
+
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={preset.speed}
+                  disabled={disabled}
+                  onChange={(event) =>
+                    updateSpeed(Number(event.target.value))
+                  }
+                  className="h-9 w-16 rounded-lg border-2 bg-slate-950 px-2
+                             text-right font-mono text-sm font-bold outline-none"
+                  style={{
+                    borderColor: color.bg,
+                    color: color.bg,
+                  }}
+                />
+              </div>
+
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={preset.speed}
+                disabled={disabled}
+                onChange={(event) =>
+                  updateSpeed(Number(event.target.value))
+                }
+                className="h-2 w-full cursor-pointer"
+                style={{ accentColor: color.bg }}
+              />
+
+              <div className="mt-2 grid grid-cols-4 gap-1">
+                {[-10, -1, 1, 10].map((amount) => (
+                  <button
+                    key={amount}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => updateSpeed(preset.speed + amount)}
+                    className={STEP_BUTTON_CLASS}
+                  >
+                    {amount > 0 ? `+${amount}` : amount}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-sm font-bold text-slate-300">
+                  시간(초)
+                </span>
+
+                <input
+                  type="number"
+                  min={0.1}
+                  max={DURATION_MAX}
+                  step={0.1}
+                  value={preset.duration}
+                  disabled={disabled}
+                  onChange={(event) =>
+                    updateDuration(Number(event.target.value))
+                  }
+                  className="h-9 w-16 rounded-lg border-2 bg-slate-950 px-2
+                             text-right font-mono text-sm font-bold outline-none"
+                  style={{
+                    borderColor: color.bg,
+                    color: color.bg,
+                  }}
+                />
+              </div>
+
+              <input
+                type="range"
+                min={0.1}
+                max={DURATION_MAX}
+                step={0.1}
+                value={preset.duration}
+                disabled={disabled}
+                onChange={(event) =>
+                  updateDuration(Number(event.target.value))
+                }
+                className="h-2 w-full cursor-pointer"
+                style={{ accentColor: color.bg }}
+              />
+
+              <div className="mt-2 grid grid-cols-4 gap-1">
+                {[-1, -0.1, 0.1, 1].map((amount) => (
+                  <button
+                    key={amount}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() =>
+                      updateDuration(preset.duration + amount)
+                    }
+                    className={STEP_BUTTON_CLASS}
+                  >
+                    {amount > 0 ? `+${amount}` : amount}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="border-t border-slate-700 pt-2 text-center text-xs text-slate-400">
+              예상 이동거리{' '}
+              <strong className="text-slate-200">
+                약{' '}
+                {Math.round(
+                  (preset.speed / 100) *
+                    preset.duration *
+                    200,
+                )}
+                px
+              </strong>
+            </div>
+          </>
+        ) : (
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm font-bold text-slate-300">각도(°)</span>
+
+              <span
+                className="text-lg font-bold"
+                style={{ color: color.bg }}
+              >
+                {formatNumber(preset.angle)}°
+              </span>
+            </div>
+
+            <input
+              type="range"
+              min={ANGLE_MIN}
+              max={ANGLE_MAX}
+              step={0.1}
+              value={preset.angle}
+              disabled={disabled}
+              onChange={(event) =>
+                updateAngle(Number(event.target.value))
+              }
+              className="h-2 w-full cursor-pointer"
+              style={{ accentColor: color.bg }}
+            />
+
+            <div className="mt-1 flex justify-between text-xs text-slate-500">
+              <span>{ANGLE_MIN}°</span>
+              <span>{ANGLE_MAX}°</span>
+            </div>
+
+            <div className="mt-3 grid grid-cols-3 gap-1">
+              {[-10, -1, -0.1].map((amount) => (
+                <button
+                  key={amount}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => updateAngle(preset.angle + amount)}
+                  className={STEP_BUTTON_CLASS}
+                >
+                  {amount}°
+                </button>
+              ))}
+            </div>
+
+            <input
+              type="number"
+              min={ANGLE_MIN}
+              max={ANGLE_MAX}
+              step={0.1}
+              value={preset.angle}
+              disabled={disabled}
+              onChange={(event) =>
+                updateAngle(Number(event.target.value))
+              }
+              className="my-2 h-12 w-full rounded-xl border border-slate-600
+                         bg-slate-950 text-center font-mono text-lg font-bold
+                         text-white outline-none"
+            />
+
+            <div className="grid grid-cols-3 gap-1">
+              {[0.1, 1, 10].map((amount) => (
+                <button
+                  key={amount}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => updateAngle(preset.angle + amount)}
+                  className={STEP_BUTTON_CLASS}
+                >
+                  +{amount}°
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function SequenceCard({
+  command,
+  index,
+  active,
+  completed,
+  collision,
+  disabled,
+  draggingOver,
+  onRemove,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
+}: {
+  command: Command;
   index: number;
-  isActive: boolean;
-  isDone: boolean;
-  isCollision: boolean;
-  canEdit: boolean;
-  dragOver: boolean;
-  cardRef: React.RefObject<HTMLDivElement | null>;
+  active: boolean;
+  completed: boolean;
+  collision: boolean;
+  disabled: boolean;
+  draggingOver: boolean;
+  onRemove: () => void;
   onDragStart: () => void;
   onDragOver: () => void;
   onDragLeave: () => void;
   onDrop: () => void;
   onDragEnd: () => void;
-  onRemove: () => void;
-  onUpdate: (updates: Partial<Omit<Command, 'id' | 'type'>>) => void;
-}
-
-function CommandCard({
-  cmd, index, isActive, isDone, isCollision, canEdit, dragOver,
-  cardRef, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd,
-  onRemove, onUpdate,
-}: CardProps) {
-  const col   = COMMAND_COLORS[cmd.type];
-  const isMove = cmd.type === 'forward' || cmd.type === 'backward';
-
-  /* Local text-input state — stays in sync with cmd values */
-  const [speedTxt, setSpeedTxt] = useState(String(cmd.speed));
-  const [durTxt,   setDurTxt]   = useState(cmd.duration.toFixed(1));
-  const [angleTxt, setAngleTxt] = useState(fmtAngle(cmd.angle));
-
-  /* Sync when external update happens (e.g. parent reorder) */
-  const prevId = useRef(cmd.id);
-  useEffect(() => {
-    if (cmd.id !== prevId.current) {
-      prevId.current = cmd.id;
-      setSpeedTxt(String(cmd.speed));
-      setDurTxt(cmd.duration.toFixed(1));
-      setAngleTxt(fmtAngle(cmd.angle));
-    } else {
-      setSpeedTxt(String(cmd.speed));
-      setDurTxt(cmd.duration.toFixed(1));
-      setAngleTxt(fmtAngle(cmd.angle));
-    }
-  }, [cmd.id, cmd.speed, cmd.duration, cmd.angle]);
-
-  /* Update helpers */
-  function applySpeed(v: number)    { const c = clampSpeed(v);    onUpdate({ speed: c });    setSpeedTxt(String(c)); }
-  function applyDuration(v: number) { const c = clampDuration(v); onUpdate({ duration: c }); setDurTxt(c.toFixed(1)); }
-  function applyAngle(v: number)    { const c = clampAngle(v);    onUpdate({ angle: c });    setAngleTxt(fmtAngle(c)); }
-
-  /* Drag state ring color */
-  const borderStyle: React.CSSProperties = {
-    outline: isActive    ? '3px solid #ffffff' :
-             isCollision ? '3px solid #ef4444' : undefined,
-    outlineOffset: '2px',
-  };
+}) {
+  const color = COMMAND_COLORS[command.type];
+  const isMove = isMoveCommand(command.type);
 
   return (
-    <div
-      ref={cardRef}
-      draggable={canEdit}
-      onDragStart={e => { onDragStart(); e.dataTransfer.effectAllowed = 'move'; }}
-      onDragOver={e  => { e.preventDefault(); onDragOver(); }}
+    <article
+      draggable={!disabled}
+      onDragStart={(event) => {
+        event.dataTransfer.effectAllowed = 'move';
+        onDragStart();
+      }}
+      onDragOver={(event) => {
+        event.preventDefault();
+        onDragOver();
+      }}
       onDragLeave={onDragLeave}
-      onDrop={e => { e.preventDefault(); onDrop(); }}
+      onDrop={(event) => {
+        event.preventDefault();
+        onDrop();
+      }}
       onDragEnd={onDragEnd}
       className={[
-        'rounded-2xl overflow-hidden border-2 transition-all',
-        dragOver ? 'translate-y-1 shadow-xl opacity-80' : '',
-        isActive ? 'shadow-lg shadow-white/20' : '',
+        'relative min-h-[104px] w-[120px] shrink-0 cursor-grab',
+        'overflow-hidden rounded-xl border-2 transition-all',
+        draggingOver ? 'translate-y-1 opacity-70' : '',
+        active ? 'scale-[1.04] shadow-lg shadow-white/20' : '',
+        completed && !active ? 'opacity-70' : '',
       ].join(' ')}
-      style={{ borderColor: isCollision ? '#ef4444' : col.border, ...borderStyle }}
+      style={{
+        borderColor: collision ? '#ef4444' : color.border,
+        background: color.bg,
+        outline: active
+          ? '3px solid white'
+          : collision
+            ? '3px solid #ef4444'
+            : undefined,
+        outlineOffset: '2px',
+      }}
     >
-      {/* ── Card header ── */}
-      <div
-        className="flex items-center gap-2 px-3 py-2.5 select-none"
-        style={{ background: col.bg }}
-      >
-        {/* Drag handle */}
-        {canEdit && (
-          <span className="text-white/50 text-lg cursor-grab active:cursor-grabbing leading-none">⠿</span>
-        )}
+      <div className="flex items-center justify-between bg-black/15 px-2 py-1">
+        <span className="flex items-center gap-1 text-xs font-bold text-white">
+          <span className="rounded-full bg-slate-900/80 px-1.5 py-0.5">
+            {index + 1}
+          </span>
 
-        {/* Step number */}
-        <span className="text-white text-xs font-mono font-bold bg-black/20 rounded-full w-6 h-6 flex items-center justify-center flex-shrink-0">
-          {index + 1}
+          {!disabled && <span aria-hidden="true">⠿</span>}
         </span>
 
-        {/* Icon + Label */}
-        <span className="text-lg">{COMMAND_ICONS[cmd.type]}</span>
-        <span className="font-jua text-white text-sm flex-1 leading-tight">{COMMAND_LABELS[cmd.type]}</span>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onRemove}
+          className="flex h-6 w-6 items-center justify-center rounded-full
+                     bg-black/25 text-sm font-bold text-white transition
+                     hover:bg-black/45 disabled:opacity-40"
+          aria-label={`${index + 1}번째 명령 삭제`}
+        >
+          ×
+        </button>
+      </div>
 
-        {/* Status badges */}
-        {isActive && (
-          <span className="text-[10px] font-bold bg-white/30 text-white px-2 py-0.5 rounded-full flex-shrink-0">
+      <div className="flex min-h-[74px] flex-col items-center justify-center p-2 text-center text-white">
+        <strong className="text-sm">
+          {COMMAND_ICONS[command.type]}{' '}
+          {COMMAND_LABELS[command.type].replace(' 이동', '').replace(' 돌기', '')}
+        </strong>
+
+        {isMove ? (
+          <span className="mt-2 text-xs leading-5">
+            속도 {command.speed}
+            <br />
+            {formatNumber(command.duration)}초
+          </span>
+        ) : (
+          <span className="mt-2 text-sm font-bold">
+            {formatNumber(command.angle)}°
+          </span>
+        )}
+
+        {active && (
+          <span className="mt-1 rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-slate-900">
             실행 중
           </span>
         )}
-        {isDone && !isActive && (
-          <span className="text-green-300 text-base flex-shrink-0">✓</span>
-        )}
-        {isCollision && (
-          <span className="text-[10px] font-bold bg-red-900/60 text-red-200 px-2 py-0.5 rounded-full flex-shrink-0">
-            충돌!
-          </span>
+
+        {completed && !active && (
+          <span className="mt-1 text-xs font-bold">✓ 완료</span>
         )}
 
-        {/* Delete */}
-        {canEdit && (
-          <button
-            onClick={onRemove}
-            className="w-7 h-7 flex items-center justify-center rounded-full bg-black/30 hover:bg-black/60 text-white text-sm flex-shrink-0 transition-all active:scale-90"
-            aria-label="삭제"
-          >×</button>
+        {collision && (
+          <span className="mt-1 text-xs font-bold">충돌!</span>
         )}
       </div>
-
-      {/* ── Card body ── */}
-      <div className="bg-slate-800 px-4 py-3 flex flex-col gap-3">
-        {isMove ? (
-          <>
-            {/* Speed row */}
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400 text-xs font-bold">속도</span>
-                <div className="flex items-center gap-1">
-                  <input
-                    type="number" min={0} max={100} step={1}
-                    value={speedTxt}
-                    onChange={e => setSpeedTxt(e.target.value)}
-                    onBlur={() => { const n = parseInt(speedTxt, 10); applySpeed(isNaN(n) ? cmd.speed : n); }}
-                    onKeyDown={e => { if (e.key === 'Enter') { const n = parseInt(speedTxt, 10); applySpeed(isNaN(n) ? cmd.speed : n); } }}
-                    className="w-14 text-right rounded-lg px-2 py-1 text-sm font-bold font-mono border-2 outline-none min-h-[36px]"
-                    style={{ background: '#0f172a', borderColor: col.bg, color: col.bg }}
-                  />
-                </div>
-              </div>
-              <input type="range" min={0} max={100} step={1} value={cmd.speed}
-                onChange={e => applySpeed(Number(e.target.value))}
-                className="w-full h-3 rounded-full cursor-pointer"
-                style={{ accentColor: col.bg }}/>
-              <div className="flex gap-1.5">
-                {([-10,-1,+1,+10] as number[]).map(d => (
-                  <button key={d} onClick={() => applySpeed(cmd.speed + d)}
-                    className={stepBtnCls} style={stepBtnStyle}>
-                    {d > 0 ? `+${d}` : d}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Duration row */}
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400 text-xs font-bold">시간(초)</span>
-                <div className="flex items-center gap-1">
-                  <input
-                    type="number" min={0.1} max={DURATION_MAX} step={0.1}
-                    value={durTxt}
-                    onChange={e => setDurTxt(e.target.value)}
-                    onBlur={() => { const n = parseFloat(durTxt); applyDuration(isNaN(n) ? cmd.duration : n); }}
-                    onKeyDown={e => { if (e.key === 'Enter') { const n = parseFloat(durTxt); applyDuration(isNaN(n) ? cmd.duration : n); } }}
-                    className="w-14 text-right rounded-lg px-2 py-1 text-sm font-bold font-mono border-2 outline-none min-h-[36px]"
-                    style={{ background: '#0f172a', borderColor: col.bg, color: col.bg }}
-                  />
-                </div>
-              </div>
-              <input type="range" min={0.1} max={DURATION_MAX} step={0.1} value={cmd.duration}
-                onChange={e => applyDuration(Number(e.target.value))}
-                className="w-full h-3 rounded-full cursor-pointer"
-                style={{ accentColor: col.bg }}/>
-              <div className="flex gap-1.5">
-                {([-1,-0.1,+0.1,+1] as number[]).map(d => (
-                  <button key={d} onClick={() => applyDuration(cmd.duration + d)}
-                    className={stepBtnCls} style={stepBtnStyle}>
-                    {d > 0 ? `+${d}` : d}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Estimated distance */}
-            <div className="flex justify-between items-center text-xs border-t border-slate-700 pt-2">
-              <span className="text-slate-500">가상 이동거리</span>
-              <span className="text-slate-300 font-mono font-bold">약 {estimatedPx(cmd.speed, cmd.duration)}px</span>
-            </div>
-          </>
-        ) : (
-          /* Turn card body */
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-slate-400 text-xs font-bold">각도</span>
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="number" min={ANGLE_MIN} max={ANGLE_MAX} step={0.1}
-                  value={angleTxt}
-                  onChange={e => {
-                    setAngleTxt(e.target.value);
-                    const n = parseFloat(e.target.value);
-                    if (!isNaN(n)) applyAngle(n);
-                  }}
-                  onBlur={() => { const n = parseFloat(angleTxt); applyAngle(isNaN(n) ? cmd.angle : n); }}
-                  onKeyDown={e => { if (e.key === 'Enter') { const n = parseFloat(angleTxt); applyAngle(isNaN(n) ? cmd.angle : n); } }}
-                  className="w-16 text-right rounded-lg px-2 py-1 text-base font-bold font-mono border-2 outline-none min-h-[36px]"
-                  style={{ background: '#0f172a', borderColor: col.bg, color: col.bg }}
-                />
-                <span className="text-white font-bold">°</span>
-              </div>
-            </div>
-            <input type="range" min={ANGLE_MIN} max={ANGLE_MAX} step={0.1} value={cmd.angle}
-              onChange={e => applyAngle(Number(e.target.value))}
-              className="w-full h-3 rounded-full cursor-pointer"
-              style={{ accentColor: col.bg }}/>
-            <div className="grid grid-cols-6 gap-1 mt-0.5">
-              {([-10,-1,-0.1,+0.1,+1,+10] as number[]).map(d => (
-                <button key={d} onClick={() => applyAngle(cmd.angle + d)}
-                  className="min-h-[38px] py-1 rounded-lg text-xs font-bold border transition-all active:scale-95 select-none"
-                  style={stepBtnStyle}>
-                  {d > 0 ? `+${d}°` : `${d}°`}
-                </button>
-              ))}
-            </div>
-            <div className="flex justify-between text-[10px] text-slate-500 pt-1">
-              <span>{cmd.type === 'turnLeft' ? '← 왼쪽으로 회전' : '→ 오른쪽으로 회전'}</span>
-              <span className="text-slate-400 font-mono">{fmtAngle(cmd.angle)}°</span>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
+    </article>
   );
 }
 
-/* ─── Main CommandEditor ─────────────────────────────────── */
-
-const ADD_BUTTONS: { type: CommandType; icon: string }[] = [
-  { type: 'forward',   icon: '⬆' },
-  { type: 'backward',  icon: '⬇' },
-  { type: 'turnLeft',  icon: '↺' },
-  { type: 'turnRight', icon: '↻' },
-];
-
 export function CommandEditor({
-  commands, currentStep, collisionStep, status,
-  onAdd, onRemove, onRemoveLast, onClearOnly, onReorder, onUpdate,
+  commands,
+  currentStep,
+  collisionStep,
+  status,
+  onAdd,
+  onRemove,
+  onRemoveLast,
+  onClearOnly,
+  onReorder,
+  onUpdate,
 }: CommandEditorProps) {
   const isRunning = status === 'running';
-  const canEdit   = !isRunning;
+  const canEdit = !isRunning;
 
-  /* drag-and-drop state */
-  const [dragIdx,     setDragIdx]     = useState<number | null>(null);
-  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  const [presets, setPresets] =
+    useState<Record<CommandType, CommandPreset>>(DEFAULT_PRESETS);
 
-  /* card refs for auto-scroll */
-  const cardRefs  = useRef<(HTMLDivElement | null)[]>([]);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
-  /* scroll to newly added card */
+  /*
+   * onAdd는 기존 구조상 type만 받는다.
+   * 명령이 추가된 직후 새 명령에 현재 조절값을 적용한다.
+   */
+  const pendingPreset = useRef<{
+    previousLength: number;
+    type: CommandType;
+    preset: CommandPreset;
+  } | null>(null);
+
   useEffect(() => {
-    if (commands.length > 0) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-  }, [commands.length]);
+    const pending = pendingPreset.current;
 
-  /* scroll to currently active card during execution */
-  useEffect(() => {
-    if (currentStep >= 0 && cardRefs.current[currentStep]) {
-      cardRefs.current[currentStep]!.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (!pending) {
+      return;
     }
-  }, [currentStep]);
+
+    if (commands.length <= pending.previousLength) {
+      return;
+    }
+
+    const addedCommand = commands[commands.length - 1];
+
+    if (addedCommand && addedCommand.type === pending.type) {
+      onUpdate(addedCommand.id, {
+        speed: pending.preset.speed,
+        duration: pending.preset.duration,
+        angle: pending.preset.angle,
+      });
+    }
+
+    pendingPreset.current = null;
+  }, [commands, onUpdate]);
+
+  function handlePresetChange(
+    type: CommandType,
+    next: CommandPreset,
+  ) {
+    setPresets((previous) => ({
+      ...previous,
+      [type]: next,
+    }));
+  }
+
+  function handleAdd(type: CommandType) {
+    if (!canEdit) {
+      return;
+    }
+
+    pendingPreset.current = {
+      previousLength: commands.length,
+      type,
+      preset: { ...presets[type] },
+    };
+
+    onAdd(type);
+  }
 
   return (
-    <div className="flex flex-col gap-3 w-full">
+    <section className="space-y-4">
+      <div>
+        <div className="mb-2">
+          <h2 className="font-jua text-lg text-white">🛠 명령 블록</h2>
+          <p className="text-sm text-slate-400">
+            값을 조절한 뒤 색깔 제목을 누르면 명령이 추가됩니다.
+          </p>
+        </div>
 
-      {/* ── Section header ── */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-jua text-white text-base flex items-center gap-1.5">
-          📋 내 명령 순서
-          <span className="text-slate-400 font-sans text-xs font-normal">({commands.length}개)</span>
-        </h3>
-        <div className="flex gap-1.5">
-          <button onClick={onRemoveLast} disabled={!canEdit || commands.length === 0}
-            className="px-2.5 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-40 text-slate-300 rounded-xl text-xs font-bold transition min-h-[36px]">
-            × 마지막
-          </button>
-          <button onClick={onClearOnly} disabled={!canEdit || commands.length === 0}
-            className="px-2.5 py-1.5 bg-slate-700 hover:bg-red-900/50 disabled:opacity-40 text-red-400 rounded-xl text-xs font-bold transition min-h-[36px]">
-            🗑 모두 지우기
-          </button>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {COMMAND_TYPES.map((type) => (
+            <CommandControlCard
+              key={type}
+              type={type}
+              preset={presets[type]}
+              disabled={isRunning}
+              onChange={(next) => handlePresetChange(type, next)}
+              onAdd={() => handleAdd(type)}
+            />
+          ))}
         </div>
       </div>
 
-      {/* ── Add buttons (4 in a row) ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-        {ADD_BUTTONS.map(({ type, icon }) => {
-          const col = COMMAND_COLORS[type];
-          return (
+      <div className="rounded-2xl border border-slate-700 bg-slate-900/65 p-3">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-jua text-lg text-white">
+            내 명령 순서
+            <span className="ml-2 text-sm text-blue-400">
+              ({commands.length}개)
+            </span>
+          </h2>
+
+          <div className="flex gap-2">
             <button
-              key={type}
-              onClick={() => onAdd(type)}
-              disabled={isRunning}
-              className="flex items-center justify-center gap-1 min-h-[48px] rounded-xl font-jua text-sm text-white shadow transition-all active:scale-95 active:brightness-90 disabled:opacity-50"
-              style={{ background: col.bg, border: `2px solid ${col.border}` }}
+              type="button"
+              disabled={!canEdit || commands.length === 0}
+              onClick={onRemoveLast}
+              className="min-h-[34px] rounded-lg border border-slate-600
+                         bg-slate-800 px-3 text-xs font-bold text-slate-300
+                         transition hover:bg-slate-700 active:scale-95
+                         disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <span>{icon}</span>
-              <span>+{COMMAND_LABELS[type]}</span>
+              × 마지막 삭제
             </button>
-          );
-        })}
-      </div>
 
-      {/* ── Vertical card list ── */}
-      <div className="flex flex-col gap-3 overflow-y-auto max-h-[calc(100vh-420px)] min-h-[120px] pr-0.5">
-        {commands.length === 0 ? (
-          <div className="flex flex-col items-center justify-center min-h-[120px] text-slate-600 gap-2 rounded-2xl border-2 border-dashed border-slate-700">
-            <span className="text-4xl">🤖</span>
-            <span className="font-jua text-sm">위 버튼으로 명령을 추가하세요!</span>
+            <button
+              type="button"
+              disabled={!canEdit || commands.length === 0}
+              onClick={onClearOnly}
+              className="min-h-[34px] rounded-lg border border-red-500/40
+                         bg-red-500/10 px-3 text-xs font-bold text-red-400
+                         transition hover:bg-red-500/20 active:scale-95
+                         disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              🗑 모두 지우기
+            </button>
           </div>
-        ) : (
-          commands.map((cmd, i) => {
-            if (!cardRefs.current[i]) cardRefs.current[i] = null;
-            return (
-              <CommandCard
-                key={cmd.id}
-                cmd={cmd}
-                index={i}
-                isActive={currentStep === i}
-                isDone={status !== 'idle' && currentStep > i}
-                isCollision={collisionStep === i}
-                canEdit={canEdit}
-                dragOver={dragOverIdx === i}
-                cardRef={{ current: cardRefs.current[i] } as React.RefObject<HTMLDivElement | null>}
-                onDragStart={() => setDragIdx(i)}
-                onDragOver={() => setDragOverIdx(i)}
-                onDragLeave={() => setDragOverIdx(null)}
-                onDrop={() => {
-                  if (dragIdx !== null && dragIdx !== i) onReorder(dragIdx, i);
-                  setDragIdx(null); setDragOverIdx(null);
-                }}
-                onDragEnd={() => { setDragIdx(null); setDragOverIdx(null); }}
-                onRemove={() => onRemove(cmd.id)}
-                onUpdate={updates => onUpdate(cmd.id, updates)}
-              />
-            );
-          })
-        )}
-        <div ref={bottomRef}/>
-      </div>
+        </div>
 
-    </div>
+        {commands.length === 0 ? (
+          <button
+            type="button"
+            onClick={() => handleAdd('forward')}
+            disabled={!canEdit}
+            className="flex min-h-[104px] w-full items-center justify-center
+                       rounded-xl border-2 border-dashed border-slate-600
+                       text-sm font-bold text-slate-400 transition
+                       hover:border-blue-500 hover:text-blue-400
+                       disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            위의 명령 블록을 눌러 명령을 추가하세요.
+          </button>
+        ) : (
+          <div className="flex flex-wrap items-stretch gap-3">
+            {commands.map((command, index) => (
+              <SequenceCard
+                key={command.id}
+                command={command}
+                index={index}
+                active={currentStep === index}
+                completed={currentStep > index}
+                collision={collisionStep === index}
+                disabled={!canEdit}
+                draggingOver={dragOverIndex === index}
+                onRemove={() => onRemove(command.id)}
+                onDragStart={() => setDragIndex(index)}
+                onDragOver={() => setDragOverIndex(index)}
+                onDragLeave={() => setDragOverIndex(null)}
+                onDrop={() => {
+                  if (
+                    dragIndex !== null &&
+                    dragIndex !== index
+                  ) {
+                    onReorder(dragIndex, index);
+                  }
+
+                  setDragIndex(null);
+                  setDragOverIndex(null);
+                }}
+                onDragEnd={() => {
+                  setDragIndex(null);
+                  setDragOverIndex(null);
+                }}
+              />
+            ))}
+
+            <button
+              type="button"
+              disabled={!canEdit}
+              onClick={() => handleAdd('forward')}
+              className="min-h-[104px] w-[120px] shrink-0 rounded-xl
+                         border-2 border-dashed border-slate-600
+                         text-sm font-bold text-blue-400 transition
+                         hover:border-blue-400 hover:bg-blue-500/10
+                         active:scale-95 disabled:cursor-not-allowed
+                         disabled:opacity-40"
+            >
+              + 명령 추가
+            </button>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
