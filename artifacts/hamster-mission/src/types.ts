@@ -55,7 +55,11 @@ export interface FloorMap {
 export const DEFAULT_SPEED = 50;
 export const DEFAULT_DURATION = 1.0;
 export const DEFAULT_ANGLE = 90;
+/** @deprecated use free angle 1–180 with 0.1 step */
 export const ANGLE_STEPS = [15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180];
+export const ANGLE_MIN = 1;
+export const ANGLE_MAX = 180;
+export const DURATION_MAX = 5.0;
 
 export function makeCommand(
   type: CommandType,
@@ -79,9 +83,13 @@ export function commandCardLabel(cmd: Command): { line1: string; line2: string }
       line2: `속도 ${cmd.speed} / ${cmd.duration.toFixed(1)}초`,
     };
   }
+  // Show 1 decimal only when not a whole number
+  const angleFmt = Number.isInteger(cmd.angle)
+    ? `${cmd.angle}°`
+    : `${cmd.angle.toFixed(1)}°`;
   return {
     line1: COMMAND_LABELS[cmd.type],
-    line2: `${cmd.angle}도`,
+    line2: angleFmt,
   };
 }
 
