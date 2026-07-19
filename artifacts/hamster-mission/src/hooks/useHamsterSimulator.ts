@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  Command, CommandType, Difficulty, ExecutionStatus, HamsterState, makeCommand, FloorMap,
+  Command, CommandType, ExecutionStatus, HamsterState, makeCommand,
 } from '../types';
-import { selectMap } from '../maps';
+import { MissionStage, getStage } from '../maps';
 
 const HAMSTER_RADIUS = 16;
-const SPEED_SCALE = 200;   // pixels per (speed=100, duration=1 s)
-const ANIM_MS    = 480;    // CSS transition duration
-const STEP_DELAY = 700;    // gap between auto-steps in runAll
+const SPEED_SCALE    = 200;  // px per (speed=100, duration=1s)
+const ANIM_MS        = 480;  // CSS transition duration
+const STEP_DELAY     = 700;  // gap between auto-steps in runAll
 
 /* ── physics ── */
 
@@ -15,7 +15,7 @@ function distancePx(speed: number, duration: number): number {
   return (speed / 100) * duration * SPEED_SCALE;
 }
 
-function isAtGoal(s: HamsterState, map: FloorMap): boolean {
+function isAtGoal(s: HamsterState, map: MissionStage): boolean {
   const dx = s.x - map.goal.x;
   const dy = s.y - map.goal.y;
   return Math.sqrt(dx * dx + dy * dy) <= map.goal.radius;
@@ -24,41 +24,30 @@ function isAtGoal(s: HamsterState, map: FloorMap): boolean {
 function computeMove(
   state: HamsterState,
   cmd: Command,
-  map: FloorMap,
+  map: MissionStage,
 ): { newState: HamsterState; collision: 'wall' | 'boundary' | null } {
-  // Rotations are instant
   if (cmd.type === 'turnLeft') {
-    return {
-      newState: { ...state, angleDeg: (state.angleDeg - cmd.angle + 360) % 360 },
-      collision: null,
-    };
+    return { newState: { ...state, angleDeg: (state.angleDeg - cmd.angle + 360) % 360 }, collision: null };
   }
   if (cmd.type === 'turnRight') {
-    return {
-      newState: { ...state, angleDeg: (state.angleDeg + cmd.angle) % 360 },
-      collision: null,
-    };
+    return { newState: { ...state, angleDeg: (state.angleDeg + cmd.angle) % 360 }, collision: null };
   }
 
-  const dist  = distancePx(cmd.speed, cmd.duration);
-  const rad   = (state.angleDeg * Math.PI) / 180;
-  const sign  = cmd.type === 'backward' ? -1 : 1;
-  const dx    = Math.cos(rad) * dist * sign;
-  const dy    = Math.sin(rad) * dist * sign;
+  const dist = distancePx(cmd.speed, cmd.duration);
+  const rad  = (state.angleDeg * Math.PI) / 180;
+  const sign = cmd.type === 'backward' ? -1 : 1;
+  const dx   = Math.cos(rad) * dist * sign;
+  const dy   = Math.sin(rad) * dist * sign;
 
-  // Sample N points along the movement segment for collision detection
   const N = 40;
   for (let i = 1; i <= N; i++) {
     const t  = i / N;
     const px = state.x + dx * t;
     const py = state.y + dy * t;
 
-    // Out of bounds
     if (
-      px < HAMSTER_RADIUS ||
-      px > map.width  - HAMSTER_RADIUS ||
-      py < HAMSTER_RADIUS ||
-      py > map.height - HAMSTER_RADIUS
+      px < HAMSTER_RADIUS || px > map.width  - HAMSTER_RADIUS ||
+      py < HAMSTER_RADIUS || py > map.height - HAMSTER_RADIUS
     ) {
       const safeT = Math.max(0, (i - 1) / N);
       return {
@@ -67,7 +56,6 @@ function computeMove(
       };
     }
 
-    // Wall rectangles (inflated by hamster radius)
     for (const wall of map.walls) {
       if (
         px >= wall.x - HAMSTER_RADIUS && px <= wall.x + wall.w + HAMSTER_RADIUS &&
@@ -81,48 +69,63 @@ function computeMove(
       }
     }
   }
-
   return { newState: { ...state, x: state.x + dx, y: state.y + dy }, collision: null };
 }
 
 /* ── hook ── */
 
-export function useHamsterSimulator(difficulty: Difficulty, missionSeed: number) {
-  const map = selectMap(missionSeed);
+export function useHamsterSimulator(stageIndex: number) {
+  const map = getStage(stageIndex);
 
-  const [hamster,     setHamster]     = useState<HamsterState>(map.start);
-  const [isAnimating, setIsAnimating] = useState(false);
-  const [commands,    setCommands]    = useState<Command[]>([]);
-  const [currentStep, setCurrentStep] = useState(-1);
-  const [status,      setStatus]      = useState<ExecutionStatus>('idle');
+  const [hamster,       setHamster]       = useState<HamsterState>(map.start);
+  const [isAnimating,   setIsAnimating]   = useState(false);
+  const [commands,      setCommands]      = useState<Command[]>([]);
+  const [currentStep,   setCurrentStep]   = useState(-1);
+  const [status,        setStatus]        = useState<ExecutionStatus>('idle');
+  const [collisionStep, setCollisionStep] = useState(-1);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  function makeHints(): Command[] {
-    return map.hintCommands.map(h => ({ ...h, id: crypto.randomUUID() }));
-  }
-
+  /** Full reset: clear commands, reset position, clear collision */
   const resetAll = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     setHamster(map.start);
     setIsAnimating(false);
     setCurrentStep(-1);
     setStatus('idle');
-    setCommands(difficulty === 'easy' ? makeHints() : []);
+    setCommands([]);
+    setCollisionStep(-1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map.id, difficulty]);
+  }, [map.id]);
 
   useEffect(() => {
     resetAll();
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [resetAll]);
 
-  /* Reset hamster position only; keep commands */
+  /** Reset position only; keep commands */
   function resetPosition() {
     if (timerRef.current) clearTimeout(timerRef.current);
     setHamster(map.start);
     setIsAnimating(false);
     setCurrentStep(-1);
     setStatus('idle');
+    setCollisionStep(-1);
+  }
+
+  /** Clear commands + reset position ("현재 단계 다시 하기") */
+  function clearCommands() {
+    if (status === 'running') return;
+    setCommands([]);
+    resetPosition();
+  }
+
+  /** Clear commands only; keep hamster position ("명령 모두 지우기") */
+  function clearCommandsOnly() {
+    if (status === 'running') return;
+    setCommands([]);
+    setCurrentStep(-1);
+    setStatus('idle');
+    setCollisionStep(-1);
   }
 
   /* ── command mutations ── */
@@ -140,12 +143,6 @@ export function useHamsterSimulator(difficulty: Difficulty, missionSeed: number)
   function removeLastCommand() {
     if (status === 'running') return;
     setCommands(prev => prev.slice(0, -1));
-  }
-
-  function clearCommands() {
-    if (status === 'running') return;
-    setCommands([]);
-    resetPosition();
   }
 
   function updateCommand(id: string, updates: Partial<Omit<Command, 'id' | 'type'>>) {
@@ -179,11 +176,17 @@ export function useHamsterSimulator(difficulty: Difficulty, missionSeed: number)
 
     timerRef.current = setTimeout(() => {
       setIsAnimating(false);
-      if      (result.collision === 'wall')     setStatus('wallHit');
-      else if (result.collision === 'boundary') setStatus('outOfBounds');
-      else if (isAtGoal(result.newState, map))  setStatus('success');
-      else if (isFinal)                         setStatus('incomplete');
-      else                                      setStatus('paused');
+      if (result.collision === 'wall') {
+        setStatus('wallHit'); setCollisionStep(nextStep);
+      } else if (result.collision === 'boundary') {
+        setStatus('outOfBounds'); setCollisionStep(nextStep);
+      } else if (isAtGoal(result.newState, map)) {
+        setStatus('success');
+      } else if (isFinal) {
+        setStatus('incomplete');
+      } else {
+        setStatus('paused');
+      }
     }, ANIM_MS + 80);
   }
 
@@ -195,6 +198,7 @@ export function useHamsterSimulator(difficulty: Difficulty, missionSeed: number)
     setIsAnimating(false);
     setCurrentStep(-1);
     setStatus('running');
+    setCollisionStep(-1);
 
     function tick() {
       step += 1;
@@ -214,6 +218,7 @@ export function useHamsterSimulator(difficulty: Difficulty, missionSeed: number)
         timerRef.current = setTimeout(() => {
           setIsAnimating(false);
           setStatus(result.collision === 'wall' ? 'wallHit' : 'outOfBounds');
+          setCollisionStep(step);
         }, ANIM_MS);
         return;
       }
@@ -236,8 +241,9 @@ export function useHamsterSimulator(difficulty: Difficulty, missionSeed: number)
   }
 
   return {
-    map, hamster, isAnimating, commands, currentStep, status,
-    addCommand, removeCommand, removeLastCommand, clearCommands,
+    map, hamster, isAnimating, commands, currentStep, status, collisionStep,
+    addCommand, removeCommand, removeLastCommand,
+    clearCommands, clearCommandsOnly,
     updateCommand, reorderCommands,
     stepForward, runAll, pause, resetAll, resetPosition,
   };

@@ -13,19 +13,19 @@ export type ExecutionStatus =
 export interface Command {
   id: string;
   type: CommandType;
-  /** 0–100: used by forward / backward */
+  /** 0–100 */
   speed: number;
-  /** 0.1–3.0 seconds: used by forward / backward */
+  /** 0.1–5.0 seconds */
   duration: number;
-  /** 15–180 in 15° steps: used by turnLeft / turnRight */
+  /** 1–180 degrees (0.1 precision) */
   angle: number;
 }
 
-/** Continuous 2-D robot position on the open floor */
+/** Continuous 2-D robot position */
 export interface HamsterState {
   x: number;
   y: number;
-  /** degrees: 0 = right, 90 = down, 180 = left, 270 = up (SVG screen space) */
+  /** degrees: 0=right, 90=down, 180=left, 270=up */
   angleDeg: number;
 }
 
@@ -37,29 +37,14 @@ export interface WallRect {
   h: number;
 }
 
-/** One classroom floor map definition */
-export interface FloorMap {
-  id: string;
-  label: string;
-  width: number;
-  height: number;
-  start: HamsterState;
-  goal: { x: number; y: number; radius: number };
-  walls: WallRect[];
-  /** Commands pre-loaded for "easy" difficulty (incomplete / wrong values) */
-  hintCommands: Omit<Command, 'id'>[];
-}
-
 /* ────────── defaults ────────── */
 
-export const DEFAULT_SPEED = 50;
+export const DEFAULT_SPEED    = 50;
 export const DEFAULT_DURATION = 1.0;
-export const DEFAULT_ANGLE = 90;
-/** @deprecated use free angle 1–180 with 0.1 step */
-export const ANGLE_STEPS = [15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180];
-export const ANGLE_MIN = 1;
-export const ANGLE_MAX = 180;
-export const DURATION_MAX = 5.0;
+export const DEFAULT_ANGLE    = 90;
+export const ANGLE_MIN        = 1;
+export const ANGLE_MAX        = 180;
+export const DURATION_MAX     = 5.0;
 
 export function makeCommand(
   type: CommandType,
@@ -75,38 +60,20 @@ export function makeCommand(
   };
 }
 
-/** Short label shown inside a command card */
-export function commandCardLabel(cmd: Command): { line1: string; line2: string } {
-  if (cmd.type === 'forward' || cmd.type === 'backward') {
-    return {
-      line1: COMMAND_LABELS[cmd.type],
-      line2: `속도 ${cmd.speed} / ${cmd.duration.toFixed(1)}초`,
-    };
-  }
-  // Show 1 decimal only when not a whole number
-  const angleFmt = Number.isInteger(cmd.angle)
-    ? `${cmd.angle}°`
-    : `${cmd.angle.toFixed(1)}°`;
-  return {
-    line1: COMMAND_LABELS[cmd.type],
-    line2: angleFmt,
-  };
-}
-
 /* ────────── display maps ────────── */
 
 export const COMMAND_LABELS: Record<CommandType, string> = {
-  forward: '앞으로',
-  turnLeft: '왼쪽 돌기',
+  forward:   '앞으로 이동',
+  backward:  '뒤로 이동',
+  turnLeft:  '왼쪽 돌기',
   turnRight: '오른쪽 돌기',
-  backward: '뒤로',
 };
 
 export const COMMAND_ICONS: Record<CommandType, string> = {
-  forward: '⬆',
-  turnLeft: '↺',
+  forward:   '⬆',
+  turnLeft:  '↺',
   turnRight: '↻',
-  backward: '⬇',
+  backward:  '⬇',
 };
 
 export const COMMAND_COLORS: Record<CommandType, { bg: string; border: string; text: string }> = {
