@@ -42,8 +42,10 @@ jobs:
           BASE_PATH: /Hamster-Robot-Maker-2/
         run: pnpm --filter @workspace/hamster-mission build
 
-      - name: Setup GitHub Pages
+      -name: Setup GitHub Pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - name: Upload built site
         uses: actions/upload-pages-artifact@v3
